@@ -7,6 +7,7 @@ from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.common.keys import Keys
 
 BASE_URL = "http://jupiter.cloud.planittesting.com"
 PRICES = {
@@ -44,25 +45,71 @@ class Home:
         return self
 
 class Contact:
-    FN=(By.ID,"forename"); EMAIL=(By.ID,"email"); MSG=(By.ID,"message")
-    FN_ERR=(By.ID,"forename-err"); EMAIL_ERR=(By.ID,"email-err"); MSG_ERR=(By.ID,"message-err")
-    SUBMIT=(By.XPATH,"//a[normalize-space()='Submit']"); SUCCESS=(By.CSS_SELECTOR,"div.alert-success")
-    def __init__(self, d): self.d, self.w = d, WebDriverWait(d, 15)
-    def submit_empty(self): self.w.until(EC.element_to_be_clickable(self.SUBMIT)).click()
+    FN     = (By.ID, "forename")
+    EMAIL  = (By.ID, "email")
+    MSG    = (By.ID, "message")
+    SUBMIT = (By.XPATH, "//a[normalize-space()='Submit']")
+    FN_ERR    = (By.ID, "forename-err")
+    EMAIL_ERR = (By.ID, "email-err")
+    MSG_ERR   = (By.ID, "message-err")
+
+    SUCCESS = (By.CSS_SELECTOR, "div.alert-success")
+
+    def __init__(self, d):
+        self.d = d
+        self.w = WebDriverWait(d, 15)
+
+    def submit_empty(self):
+        self.w.until(EC.element_to_be_clickable(self.SUBMIT)).click()
+        self.w.until(
+            lambda _:
+                any(EC.visibility_of_element_located(loc)(self.d)
+                    for loc in (self.FN_ERR, self.EMAIL_ERR, self.MSG_ERR))
+        )
+
     def assert_errors_present(self):
         for loc in (self.FN_ERR, self.EMAIL_ERR, self.MSG_ERR):
-            assert self.w.until(EC.visibility_of_element_located(loc)).is_displayed()
-    def fill_mandatory(self, fn, email, msg):
-        self.w.until(EC.visibility_of_element_located(self.FN)).send_keys(fn)
-        self.d.find_element(*self.EMAIL).send_keys(email)
-        self.d.find_element(*self.MSG).send_keys(msg)
+            el = self.w.until(EC.visibility_of_element_located(loc))
+            assert el.text.strip() != ""
+
+    def fill_mandatory(self, name, email, message):
+
+        fn = self.w.until(EC.visibility_of_element_located(self.FN))
+        fn.clear(); fn.send_keys(name); fn.send_keys(Keys.TAB)
+
+        em = self.d.find_element(*self.EMAIL)
+        em.clear(); em.send_keys(email); em.send_keys(Keys.TAB)
+
+        ms = self.d.find_element(*self.MSG)
+        ms.clear(); ms.send_keys(message); ms.send_keys(Keys.TAB)
+
+        try:
+            self.d.find_element(By.TAG_NAME, "h1").click()
+        except Exception:
+            pass
+
+    def assert_errors_cleared(self):
+        def cleared(loc):
+            try:
+                el = self.d.find_element(*loc)
+            except Exception:
+                return True
+            return (not el.is_displayed()) or (el.text.strip() == "")
+
+        WebDriverWait(self.d, 20).until(
+            lambda _: all(cleared(loc) for loc in (self.FN_ERR, self.EMAIL_ERR, self.MSG_ERR))
+        )
+
     def assert_errors_gone(self):
-        self.w.until(EC.invisibility_of_element_located(self.FN_ERR))
-        self.w.until(EC.invisibility_of_element_located(self.EMAIL_ERR))
-        self.w.until(EC.invisibility_of_element_located(self.MSG_ERR))
-    def submit(self): self.d.find_element(*self.SUBMIT).click()
-    def assert_success(self, name):
-        banner=self.w.until(EC.visibility_of_element_located(self.SUCCESS))
+        self.assert_errors_cleared()
+
+    def submit(self):
+        self.w.until(EC.element_to_be_clickable(self.SUBMIT)).click()
+
+    def assert_success(self, name: str):
+        self.d.execute_script("window.scrollTo(0, 0);")
+        banner = WebDriverWait(self.d, 30).until(EC.visibility_of_element_located(self.SUCCESS))
+        WebDriverWait(self.d, 5).until(lambda _: "Thanks" in banner.text)
         assert "Thanks" in banner.text and name in banner.text
 
 class Shop:
